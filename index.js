@@ -62,15 +62,46 @@ async function getComments() {
     };
 }
 
+var userStat=[]
+
+async function getStats() {
+        try {
+            const response = await http.get('/repos/' + repo + '/stats/contributors')
+            response.data.forEach(stat => {
+                userStat.push({'name':stat.author.login , 'commits':stat.total})
+            });
+        } catch (err) {
+            console.error(chalk.red(err))
+            console.dir(err.response.data, { colors: true, depth: 4 })
+        }
+    
+}
+
 const users =[];
+
+const final = []
 
 function run(){
     getComments().then(function(){
         for(const comment of comments){
             users.push(comment.user.login);
         };
-        let test = _.countBy(users);
-        console.log(test);
+        let userComCount = _.countBy(users);
+
+        getStats().then(function(){
+
+            userStat.forEach(function(person){
+                let keys = Object.keys(userComCount);
+                keys.forEach(function(key){
+                    if(person.name == key){
+                        final.push({'name': person.name, 'comments':userComCount[key], 'commits': person.commits})
+                    }
+                })
+
+            })
+            let sortedFinal = _.sortBy(final, 'comments').reverse();
+            console.log(sortedFinal);
+        })
     });
 }
 
