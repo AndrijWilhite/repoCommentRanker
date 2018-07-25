@@ -2,6 +2,7 @@ const axios = require('axios');
 const config = require('./src/config.js');
 const chalk = require('chalk');
 var _ = require('lodash');
+var moment = require('moment');
 
 var repo;
 var period;
@@ -34,6 +35,16 @@ const http = axios.create({
 
 var comments = [];
 
+
+const setDay = (moment().dayOfYear()) - period;
+function dateCheck(comment){
+    let postDate = moment(comment.created_at).dayOfYear();
+    if(postDate >= setDay){
+        comments.push(comment);
+    }
+}
+
+
 //cycles through the various comment end points and hits them, pushes to Comments
 async function getComments() {
     var reqEnd = ['/comments', '/issues/comments', '/pulls/comments']
@@ -42,7 +53,7 @@ async function getComments() {
 
             const response = await http.get('/repos/' + repo + ending)
             response.data.forEach(comment => {
-                comments.push(comment);
+                dateCheck(comment);
             });
         } catch (err) {
             console.error(chalk.red(err))
