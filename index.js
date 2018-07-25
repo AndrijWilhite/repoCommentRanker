@@ -3,6 +3,8 @@ const config = require('./src/config.js');
 const chalk = require('chalk');
 var _ = require('lodash');
 var moment = require('moment');
+const leftPad = require('left-pad')
+
 
 var repo;
 var period;
@@ -100,7 +102,22 @@ function run(){
 
             })
             let sortedFinal = _.sortBy(final, 'comments').reverse();
-            console.log(sortedFinal);
+            var maxLength = "";
+
+            sortedFinal.forEach(function(person){
+                if (maxLength == 0){
+                    maxLength += (person.comments+"").length
+                    let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
+                    console.log(result);
+
+                }else {
+                    let comLength = maxLength - (person.comments+"").length
+                    let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
+                    console.log(result);
+                }
+
+
+            });
         })
     });
 }
