@@ -1,3 +1,8 @@
+const axios = require('axios');
+const config = require('./src/config.js');
+const chalk = require('chalk');
+var _ = require('lodash');
+
 var repo;
 var period;
 
@@ -17,7 +22,48 @@ if(period == undefined || repo == undefined){
     process.exit(1);
 }
 
-// console.log(period);
-// console.log(repo);
-
 console.log('Fetching comments for past ' + period + ' days for "' + repo + '"...');
+
+const apiBase = 'https://api.github.com';
+const http = axios.create({
+    baseURL: apiBase,
+    headers: {
+      Authorization: `token ${config.GITHUB_PERSONAL_ACCESS_TOKEN}`,
+    },
+  });
+
+var comments = [];
+
+//cycles through the various comment end points and hits them, pushes to Comments
+async function getComments() {
+    var reqEnd = ['/comments', '/issues/comments', '/pulls/comments']
+    for(const ending of reqEnd){
+        try {
+
+            const response = await http.get('/repos/' + repo + ending)
+            response.data.forEach(comment => {
+                comments.push(comment);
+            });
+        } catch (err) {
+            console.error(chalk.red(err))
+            console.dir(err.response.data, { colors: true, depth: 4 })
+        }
+    };
+}
+
+const users =[];
+
+function run(){
+    getComments().then(function(){
+        for(const comment of comments){
+            users.push(comment.user.login);
+        };
+        let test = _.countBy(users);
+        console.log(test);
+    });
+}
+
+run();
+
+
+
