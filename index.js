@@ -3,7 +3,9 @@ const config = require('./src/config.js');
 const chalk = require('chalk');
 var _ = require('lodash');
 var moment = require('moment');
-const leftPad = require('left-pad')
+const leftPad = require('left-pad');
+const _cliProgress = require('cli-progress');
+
 
 
 var repo;
@@ -26,6 +28,8 @@ if(period == undefined || repo == undefined){
 }
 
 console.log('Fetching comments for past ' + period + ' days for "' + repo + '"...');
+const bar1 = new _cliProgress.Bar({fps: 60,}, _cliProgress.Presets.shades_classic);
+bar1.start(100, 0)
 
 const apiBase = 'https://api.github.com';
 const http = axios.create({
@@ -46,13 +50,19 @@ function dateCheck(comment){
     }
 }
 
-
 //cycles through the various comment end points and hits them, pushes to Comments
 async function getComments() {
     var reqEnd = ['/comments', '/issues/comments', '/pulls/comments']
     for(const ending of reqEnd){
-        try {
+        if(ending == '/comments'){
+        bar1.update(20);
+        }else if(ending == '/issues/comments'){
+            bar1.update(40);
+        }else if(ending == '/issues/comments'){
+            bar1.update(60);
+        }
 
+        try {
             const response = await http.get('/repos/' + repo + ending)
             response.data.forEach(comment => {
                 dateCheck(comment);
@@ -67,6 +77,7 @@ async function getComments() {
 var userStat=[]
 
 async function getStats() {
+    bar1.update(80);
         try {
             const response = await http.get('/repos/' + repo + '/stats/contributors')
             response.data.forEach(stat => {
@@ -91,7 +102,6 @@ function run(){
         let userComCount = _.countBy(users);
 
         getStats().then(function(){
-
             userStat.forEach(function(person){
                 let keys = Object.keys(userComCount);
                 keys.forEach(function(key){
@@ -103,9 +113,11 @@ function run(){
             })
             let sortedFinal = _.sortBy(final, 'comments').reverse();
             var maxLength = "";
+            bar1.update(100);
 
             sortedFinal.forEach(function(person){
-                if (maxLength == 0){
+                if (maxLength == ""){
+                    console.log(" ");
                     maxLength += (person.comments+"").length
                     let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
                     console.log(result);
@@ -114,12 +126,15 @@ function run(){
                     let comLength = maxLength - (person.comments+"").length
                     let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
                     console.log(result);
+
                 }
 
 
             });
+            bar1.stop();
         })
     });
+    
 }
 
 run();
