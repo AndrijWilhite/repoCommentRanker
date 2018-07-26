@@ -6,16 +6,13 @@ var moment = require('moment');
 const leftPad = require('left-pad');
 const _cliProgress = require('cli-progress');
 
-
-
 var repo;
 var period;
-const comments = [];
-const userStat=[];
-const users =[];
-const final = [];
-
-
+var userComCount;
+var comments = [];
+var userStat=[];
+var users =[];
+var final = [];
 
 //gets param for repo
 if(process.argv.indexOf("--repo") != -1){
@@ -36,7 +33,7 @@ console.log("\n");
 console.log('Fetching comments for past ' + period + ' days for "' + repo + '"...');
 
 //builds the progress bar and starts it
-const progressBar = new _cliProgress.Bar({fps: 60, format: '[{bar}] {percentage}% | rateLimit: {rateLimit}/5000'}, _cliProgress.Presets.shades_classic);
+const progressBar = new _cliProgress.Bar({fps: 60, format: '[{bar}] {percentage}% | rateLimit: {rateLimit}/5000'}, _cliProgress.Presets.rect);
 
 console.log("\n");
 progressBar.start(100, 0)
@@ -49,7 +46,6 @@ const http = axios.create({
     },
   });
 
-
 const setDay = (moment().dayOfYear()) - period;
 //converts the date into day of year and compares against the day of year for the comment
 function dateCheck(comment){
@@ -61,7 +57,8 @@ function dateCheck(comment){
 
 //cycles through the various comment end points and hits them, pushes to Comments
 async function getComments() {
-    var reqEnd = ['/comments', '/issues/comments', '/pulls/comments']
+    var reqEnd = ['/comments', '/issues/comments', '/pulls/comments'];
+
     for(const ending of reqEnd){
         if(ending == '/comments'){
         progressBar.update(20);
@@ -82,9 +79,59 @@ async function getComments() {
     };
 };
 
+//hits rate limit end point
+async function getRateLimit() {
+    try {
+        const response = await http.get('/rate_limit')
+        return response.data.rate;
+
+    } catch (err) {
+        console.log(err);
+    };
+};
+
+//ensures that there is enough req left on the limit to complete all of the calls
+function checkRate(){
+    getRateLimit().then(function(rate){
+        if(rate.remaining >= 4){
+            progressBar.start(100, 0, {
+                rateLimit: rate.remaining
+            })
+            runReport();
+        }else if(rate.remaining <= 3){
+            var waitTime = moment.unix(rate.reset).toString()
+            console.log('You have reach the Rate Limit for this key, please wait until'+ waitTime);        
+        }
+    });
+};
+
+//sorts and prints report
+function finalOutPut(){
+    let sortedFinal = _.sortBy(final, 'comments').reverse();
+    //maxLength is used for leftPad 
+    var maxLength = "";
+    progressBar.update(100);
+
+    //prints the people and their comment/commit info from the final array
+    sortedFinal.forEach(function(person){
+        if (maxLength == ""){
+            console.log('\n');
+            maxLength += (person.comments+"").length
+            let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
+            console.log(result);
+        }else {
+            let comLength = maxLength - (person.comments+"").length
+            let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
+            console.log(result);
+        };
+    });
+    progressBar.stop();
+};
+
+//handles 202 response as github takes a second compile the statistics
 function statsHandler(resp){
     if(resp.status == 202){
-        setTimeout(function(){getStats(), 5000});
+        setTimeout(function(){runStats(userComCount), 5000});
     }else if(resp.status == 200){
         resp.data.forEach(stat => {
             userStat.push({'name':stat.author.login , 'commits':stat.total})
@@ -96,43 +143,33 @@ function statsHandler(resp){
 
 //hits the stats/commit api
 async function getStats() {
-    progressBar.update(80);
         try {
             const response = await http.get('/repos/' + repo + '/stats/contributors');
             statsHandler(response);
         } catch (err) {
             console.log(err)
-        
         };
 };
 
-async function getRateLimit() {
-        try {
-            const response = await http.get('/rate_limit')
-            return response.data.rate;
-
-        } catch (err) {
-            console.log(err)
-        
+function runStats(userComCount){
+    getStats().then(function(){
+        if(userStat != undefined || userStat.length > 1){
+            userStat.forEach(function(person){
+                let keys = Object.keys(userComCount);
+                keys.forEach(function(key){
+                    if(person.name == key){
+                        final.push({'name': person.name, 'comments':userComCount[key], 'commits': person.commits});
+                    };
+                });
+            });
+            finalOutPut();
         };
+});
 };
 
-function checkRate(){
-    getRateLimit().then(function(rate){
-        if(rate.remaining >= 4){
-            progressBar.start(100, 0, {
-                rateLimit: rate.remaining
-            })
-            runPoll();
-        }else if(rate.remaining <= 3){
-            var waitTime = moment.unix(rate.reset).toString()
-            console.log('You have reach the Rate Limit for this key, please wait until'+ waitTime);        
-        }
-    });
-};
-
-function runPoll(){
+function runReport(){
     getComments().then(function(){
+        //checks to see if there are comments to rank
         if(comments == undefined || comments.length <1){
             console.log("\n");
             console.log("There are no comments for this repo.");
@@ -141,45 +178,13 @@ function runPoll(){
             for(const comment of comments){
                 users.push(comment.user.login);
             };
-            let userComCount = _.countBy(users);
+            userComCount = _.countBy(users);
             //hits stats api
-            getStats().then(function(){
-                //thats commit data and the comments data and and pushes into their own data set
-                userStat.forEach(function(person){
-                    let keys = Object.keys(userComCount);
-                    keys.forEach(function(key){
-                        if(person.name == key){
-                            final.push({'name': person.name, 'comments':userComCount[key], 'commits': person.commits})
-                        };
-                    });
-                });
-    
-                //reverse so that highest comment is in position 0
-                let sortedFinal = _.sortBy(final, 'comments').reverse();
-                //maxLength is used for leftPad 
-                var maxLength = "";
-                progressBar.update(100);
-    
-                //prints the people and their comment/commit info from the final array
-                sortedFinal.forEach(function(person){
-                    if (maxLength == ""){
-                        //required to handle spacing issue with progress bar
-                        console.log('\n');
-                        maxLength += (person.comments+"").length
-                        let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
-                        console.log(result);
-                    }else {
-                        let comLength = maxLength - (person.comments+"").length
-                        let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
-                        console.log(result);
-                    };
-                });
-                progressBar.stop();
-            })
-
+            progressBar.update(80);
+            runStats(userComCount);
         }
     });
-}
+};
 
 checkRate();
 
