@@ -32,12 +32,14 @@ if(period == undefined || repo == undefined){
     console.log(msg);
     process.exit(1);
 };
-
+console.log("\n");
 console.log('Fetching comments for past ' + period + ' days for "' + repo + '"...');
 
 //builds the progress bar and starts it
-const progressBar = new _cliProgress.Bar({fps: 60, format: 'progress [{bar}] {percentage}% | RateLimit: {rateLimit}/5000'}, _cliProgress.Presets.shades_classic);
-// progressBar.start(100, 0)
+const progressBar = new _cliProgress.Bar({fps: 60, format: '[{bar}] {percentage}% | rateLimit: {rateLimit}/5000'}, _cliProgress.Presets.shades_classic);
+
+console.log("\n");
+progressBar.start(100, 0)
 
 const apiBase = 'https://api.github.com';
 const http = axios.create({
@@ -75,9 +77,20 @@ async function getComments() {
                 dateCheck(comment);
             });
         } catch (err) {
-            console.error(chalk.red(err))
-            console.dir(err.response.data, { colors: true, depth: 4 })
+            console.log(err)
         };
+    };
+};
+
+function statsHandler(resp){
+    if(resp.status == 202){
+        setTimeout(function(){getStats(), 5000});
+    }else if(resp.status == 200){
+        resp.data.forEach(stat => {
+            userStat.push({'name':stat.author.login , 'commits':stat.total})
+        });
+    }else{
+        console.log('Error: '+resp.status);
     };
 };
 
@@ -85,13 +98,11 @@ async function getComments() {
 async function getStats() {
     progressBar.update(80);
         try {
-            const response = await http.get('/repos/' + repo + '/stats/contributors')
-            response.data.forEach(stat => {
-                userStat.push({'name':stat.author.login , 'commits':stat.total})
-            });
+            const response = await http.get('/repos/' + repo + '/stats/contributors');
+            statsHandler(response);
         } catch (err) {
-            console.error(chalk.red(err))
-            console.dir(err.response.data, { colors: true, depth: 4 })
+            console.log(err)
+        
         };
 };
 
@@ -101,63 +112,10 @@ async function getRateLimit() {
             return response.data.rate;
 
         } catch (err) {
-            console.error(chalk.red(err))
-            console.dir(err.response.data, { colors: true, depth: 4 })
+            console.log(err)
+        
         };
 };
-
-// function run(){
-//     getRateLimit().then(function(rate){
-//         if(rate <= 4){
-
-//         }
-//         progressBar.start(100, 0, {
-//             rateLimit: rate
-//         })
-//     });
-//     //hits comments apu
-//     getComments().then(function(){
-//         for(const comment of comments){
-//             users.push(comment.user.login);
-//         };
-//         let userComCount = _.countBy(users);
-//         //hits stats api
-//         getStats().then(function(){
-//             //thats commit data and the comments data and and pushes into their own data set
-//             userStat.forEach(function(person){
-//                 let keys = Object.keys(userComCount);
-//                 keys.forEach(function(key){
-//                     if(person.name == key){
-//                         final.push({'name': person.name, 'comments':userComCount[key], 'commits': person.commits})
-//                     };
-//                 });
-//             });
-
-//             //reverse so that highest comment is in position 0
-//             let sortedFinal = _.sortBy(final, 'comments').reverse();
-//             //maxLength is used for leftPad 
-//             var maxLength = "";
-//             progressBar.update(100);
-
-//             //prints the people and their comment/commit info from the final array
-//             sortedFinal.forEach(function(person){
-//                 if (maxLength == ""){
-//                     //required to handle spacing issue with progress bar
-//                     console.log(" ");
-//                     maxLength += (person.comments+"").length
-//                     let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
-//                     console.log(result);
-//                 }else {
-//                     let comLength = maxLength - (person.comments+"").length
-//                     let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
-//                     console.log(result);
-//                 };
-//             });
-//             progressBar.stop();
-//         })
-//     });
-// };
-
 
 function checkRate(){
     getRateLimit().then(function(rate){
@@ -175,47 +133,53 @@ function checkRate(){
 
 function runPoll(){
     getComments().then(function(){
-        for(const comment of comments){
-            users.push(comment.user.login);
-        };
-        let userComCount = _.countBy(users);
-        //hits stats api
-        getStats().then(function(){
-            //thats commit data and the comments data and and pushes into their own data set
-            userStat.forEach(function(person){
-                let keys = Object.keys(userComCount);
-                keys.forEach(function(key){
-                    if(person.name == key){
-                        final.push({'name': person.name, 'comments':userComCount[key], 'commits': person.commits})
+        if(comments == undefined || comments.length <1){
+            console.log("\n");
+            console.log("There are no comments for this repo.");
+            process.exit();
+        }else{
+            for(const comment of comments){
+                users.push(comment.user.login);
+            };
+            let userComCount = _.countBy(users);
+            //hits stats api
+            getStats().then(function(){
+                //thats commit data and the comments data and and pushes into their own data set
+                userStat.forEach(function(person){
+                    let keys = Object.keys(userComCount);
+                    keys.forEach(function(key){
+                        if(person.name == key){
+                            final.push({'name': person.name, 'comments':userComCount[key], 'commits': person.commits})
+                        };
+                    });
+                });
+    
+                //reverse so that highest comment is in position 0
+                let sortedFinal = _.sortBy(final, 'comments').reverse();
+                //maxLength is used for leftPad 
+                var maxLength = "";
+                progressBar.update(100);
+    
+                //prints the people and their comment/commit info from the final array
+                sortedFinal.forEach(function(person){
+                    if (maxLength == ""){
+                        //required to handle spacing issue with progress bar
+                        console.log('\n');
+                        maxLength += (person.comments+"").length
+                        let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
+                        console.log(result);
+                    }else {
+                        let comLength = maxLength - (person.comments+"").length
+                        let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
+                        console.log(result);
                     };
                 });
-            });
+                progressBar.stop();
+            })
 
-            //reverse so that highest comment is in position 0
-            let sortedFinal = _.sortBy(final, 'comments').reverse();
-            //maxLength is used for leftPad 
-            var maxLength = "";
-            progressBar.update(100);
-
-            //prints the people and their comment/commit info from the final array
-            sortedFinal.forEach(function(person){
-                if (maxLength == ""){
-                    //required to handle spacing issue with progress bar
-                    console.log(" ");
-                    maxLength += (person.comments+"").length
-                    let result = person.comments+" comments, "+person.name+" ("+person.commits+" commits)";
-                    console.log(result);
-                }else {
-                    let comLength = maxLength - (person.comments+"").length
-                    let result = leftPad(person.comments, comLength+1)+" comments, "+person.name+" ("+person.commits+" commits)";
-                    console.log(result);
-                };
-            });
-            progressBar.stop();
-        })
+        }
     });
 }
-
 
 checkRate();
 
